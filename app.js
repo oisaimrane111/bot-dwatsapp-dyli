@@ -1,20 +1,52 @@
-const { WAConnection, MessageType } = require('@adiwajshing/baileys');
+const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@adiwajshing/baileys');
 const sqlite3 = require('sqlite3');
 const fs = require('fs');
 
-const conn = new WAConnection();
-conn.on('open', () => {
-    console.log('WhatsApp Web is ready');
-});
-
-// Connect to WhatsApp
+// Setup authentication state and WhatsApp connection
 async function connectWhatsApp() {
-    await conn.connect();
-    console.log('Connected to WhatsApp');
+    const { state, saveState } = await useMultiFileAuthState('./auth');
+    const { version } = await fetchLatestBaileysVersion();
+    const conn = makeWASocket({
+        version,
+        printQRInTerminal: true,
+        auth: state
+    });
+
+    conn.ev.on('connection.update', (update) => {
+        if (update.connection === 'close') {
+            console.log('Connection closed, reconnecting...');
+            connectWhatsApp();  // Reconnect if connection is lost
+        }
+    });
+
+    conn.ev.on('messages.upsert', async (m) => {
+        const message = m.messages[0];
+        const messageText = message.message.conversation.toLowerCase().trim();
+        const senderId = message.key.remoteJid;
+
+        if (messageText === "!create_tournament") {
+            const parts = messageText.split(" ");
+            if (parts.length < 3) {
+                conn.sendMessage(senderId, '⚠️ Usage: !create_tournament <name> <format>', { text: 'text' });
+            } else {
+                const name = parts[1];
+                const format = parts[2];
+                const db = new sqlite3.Database('./tournaments.db');
+                db.run("INSERT INTO tournaments (name, format) VALUES (?, ?)", [name, format], (err) => {
+                    if (err) {
+                        conn.sendMessage(senderId, '❌ Error creating tournament!', { text: 'text' });
+                    } else {
+                        conn.sendMessage(senderId, `✅ Tournament '${name}' created with format '${format}'! 🏆`, { text: 'text' });
+                    }
+                });
+            }
+        } else {
+            conn.sendMessage(senderId, '❌ Invalid command! Use !help for available commands.', { text: 'text' });
+        }
+    });
 }
 
-// Initialize DB (if you don't have one)
-function initDb() {
+async function initDb() {
     const db = new sqlite3.Database('./tournaments.db');
     db.serialize(() => {
         db.run("CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, format TEXT)");
@@ -22,38 +54,6 @@ function initDb() {
         db.run("CREATE TABLE IF NOT EXISTS matches (id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER, team1 TEXT, score1 INTEGER, team2 TEXT, score2 INTEGER, FOREIGN KEY (tournament_id) REFERENCES tournaments(id))");
     });
 }
-
-// Handle incoming messages
-conn.on('chat-update', async (chatUpdate) => {
-    if (chatUpdate.messages) {
-        const message = chatUpdate.messages[0];
-        const messageText = message.message.conversation.toLowerCase().trim();
-        const senderId = message.key.remoteJid;
-
-        if (messageText === "!create_tournament") {
-            // Example: !create_tournament <name> <format>
-            const parts = messageText.split(" ");
-            if (parts.length < 3) {
-                conn.sendMessage(senderId, '⚠️ Usage: !create_tournament <name> <format>', MessageType.text);
-            } else {
-                const name = parts[1];
-                const format = parts[2];
-                const db = new sqlite3.Database('./tournaments.db');
-                db.run("INSERT INTO tournaments (name, format) VALUES (?, ?)", [name, format], (err) => {
-                    if (err) {
-                        conn.sendMessage(senderId, '❌ Error creating tournament!', MessageType.text);
-                    } else {
-                        conn.sendMessage(senderId, `✅ Tournament '${name}' created with format '${format}'! 🏆`, MessageType.text);
-                    }
-                });
-            }
-        } 
-        // Add more commands as needed
-        else {
-            conn.sendMessage(senderId, '❌ Invalid command! Use !help for available commands.', MessageType.text);
-        }
-    }
-});
 
 connectWhatsApp();
 initDb();
