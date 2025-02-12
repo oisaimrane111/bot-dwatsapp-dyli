@@ -1,4 +1,11 @@
 {
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Tournament Bot using Baileys",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
   "dependencies": {
     "@adiwajshing/baileys": "^5.0.0",
     "sqlite3": "^5.1.0"
