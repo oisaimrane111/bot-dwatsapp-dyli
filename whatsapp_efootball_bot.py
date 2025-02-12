@@ -1,68 +1,59 @@
-import os
-import requests
-from flask import Flask, request
+const { WAConnection, MessageType } = require('@adiwajshing/baileys');
+const sqlite3 = require('sqlite3');
+const fs = require('fs');
 
-app = Flask(__name__)
+const conn = new WAConnection();
+conn.on('open', () => {
+    console.log('WhatsApp Web is ready');
+});
 
-# WhatsApp Cloud API credentials
-ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN")  # Replace with your access token
-PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")  # Replace with your phone number ID
-API_URL = f"https://graph.facebook.com/v15.0/{PHONE_NUMBER_ID}/messages"
+// Connect to WhatsApp
+async function connectWhatsApp() {
+    await conn.connect();
+    console.log('Connected to WhatsApp');
+}
 
-def send_message(to, message):
-    """Send message via WhatsApp Cloud API"""
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+// Initialize DB (if you don't have one)
+function initDb() {
+    const db = new sqlite3.Database('./tournaments.db');
+    db.serialize(() => {
+        db.run("CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, format TEXT)");
+        db.run("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER, name TEXT, FOREIGN KEY (tournament_id) REFERENCES tournaments(id))");
+        db.run("CREATE TABLE IF NOT EXISTS matches (id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER, team1 TEXT, score1 INTEGER, team2 TEXT, score2 INTEGER, FOREIGN KEY (tournament_id) REFERENCES tournaments(id))");
+    });
+}
+
+// Handle incoming messages
+conn.on('chat-update', async (chatUpdate) => {
+    if (chatUpdate.messages) {
+        const message = chatUpdate.messages[0];
+        const messageText = message.message.conversation.toLowerCase().trim();
+        const senderId = message.key.remoteJid;
+
+        if (messageText === "!create_tournament") {
+            // Example: !create_tournament <name> <format>
+            const parts = messageText.split(" ");
+            if (parts.length < 3) {
+                conn.sendMessage(senderId, '⚠️ Usage: !create_tournament <name> <format>', MessageType.text);
+            } else {
+                const name = parts[1];
+                const format = parts[2];
+                const db = new sqlite3.Database('./tournaments.db');
+                db.run("INSERT INTO tournaments (name, format) VALUES (?, ?)", [name, format], (err) => {
+                    if (err) {
+                        conn.sendMessage(senderId, '❌ Error creating tournament!', MessageType.text);
+                    } else {
+                        conn.sendMessage(senderId, `✅ Tournament '${name}' created with format '${format}'! 🏆`, MessageType.text);
+                    }
+                });
+            }
+        } 
+        // Add more commands as needed
+        else {
+            conn.sendMessage(senderId, '❌ Invalid command! Use !help for available commands.', MessageType.text);
+        }
     }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,  # Receiver's phone number (in international format)
-        "text": {"body": message}  # Message content
-    }
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        print("Message sent successfully!")
-    else:
-        print(f"Failed to send message. Error: {response.status_code}, {response.text}")
+});
 
-@app.route("/whatsapp", methods=["POST"])
-def whatsapp_bot():
-    incoming_msg = request.values.get("Body", "").strip().lower()
-    sender = request.values.get("From", "").strip()  # Get the sender's phone number
-    response = "❌ Invalid command! Use !help for available commands."
-
-    if incoming_msg.startswith("!create_tournament"):
-        parts = incoming_msg.split(" ", 2)
-        if len(parts) < 3:
-            response = "⚠️ Usage: !create_tournament <name> <format>"
-        else:
-            name, format_type = parts[1], parts[2]
-            # Database code here for creating a tournament
-            response = f"✅ Tournament '{name}' created successfully with format '{format_type}'! 🏆"
-    
-    elif incoming_msg.startswith("!add_team"):
-        parts = incoming_msg.split(" ", 2)
-        if len(parts) < 3:
-            response = "⚠️ Usage: !add_team <tournament> <team_name>"
-        else:
-            tournament, team_name = parts[1], parts[2]
-            # Database code here for adding a team
-            response = f"✅ Team '{team_name}' added to '{tournament}'! ⚽"
-    
-    elif incoming_msg.startswith("!set_match"):
-        parts = incoming_msg.split(" ", 5)
-        if len(parts) < 6:
-            response = "⚠️ Usage: !set_match <tournament> <team1> <score1> <team2> <score2>"
-        else:
-            tournament, team1, score1, team2, score2 = parts[1], parts[2], parts[3], parts[4], parts[5]
-            # Database code here for setting a match result
-            response = f"✅ Match result recorded: {team1} {score1}-{score2} {team2} ⚽"
-    
-    # Send the response to WhatsApp
-    send_message(sender, response)
-
-    return "OK", 200
-
-if __name__ == "__main__":
-    app.run(debug=True)
+connectWhatsApp();
+initDb();
