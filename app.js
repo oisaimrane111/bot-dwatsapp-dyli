@@ -55,5 +55,6 @@ async function initDb() {
     });
 }
 
+// Start WhatsApp connection and initialize DB
 connectWhatsApp();
 initDb();
