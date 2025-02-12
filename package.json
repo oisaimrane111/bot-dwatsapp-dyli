@@ -1,14 +1,19 @@
 {
   "name": "whatsapp-bot",
   "version": "1.0.0",
-  "description": "A WhatsApp bot using Baileys and Giphy",
-  "main": "index.js",
+  "description": "A WhatsApp bot using Baileys and Giphy with TypeScript",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node dist/index.js", 
+    "build": "tsc", 
+    "dev": "tsc --watch"
   },
   "dependencies": {
-    "@adiwajshing/baileys": "^6.0.0",
+    "@adiwajshing/baileys": "^5.0.0",
     "axios": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
   },
   "author": "",
   "license": "ISC"
