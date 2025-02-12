@@ -1,58 +1,73 @@
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@adiwajshing/baileys');
-const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@adiwajshing/baileys');
-const sqlite3 = require('sqlite3');
+const { makeWASocket, fetchLatestBaileysVersion, useSingleFileAuthState } = require('@adiwajshing/baileys');
+const axios = require('axios');
 
-async function connectWhatsApp() {
-    const { state, saveState } = await useMultiFileAuthState('./auth');
-    const { version } = await fetchLatestBaileysVersion();
-    const conn = makeWASocket({
-        version,
-        printQRInTerminal: true,
-        auth: state,
-    });
+// Giphy API Key
+const giphyAPIKey = 'YOUR_GIPHY_API_KEY';
+const giphyURL = 'https://api.giphy.com/v1/gifs/random?api_key=' + giphyAPIKey;
 
-    conn.ev.on('connection.update', (update) => {
-        if (update.connection === 'close') {
-            console.log('Connection closed, reconnecting...');
-            connectWhatsApp();  // Reconnect if connection is lost
-        }
-    });
+// Use emoji in messages
+const emojis = {
+  football: '⚽',
+  winner: '🏆',
+  celebration: '🎉'
+};
 
-    conn.ev.on('messages.upsert', async (m) => {
-        const message = m.messages[0];
-        const messageText = message.message.conversation.toLowerCase().trim();
-        const senderId = message.key.remoteJid;
+const { state, saveState } = useSingleFileAuthState('./auth_info.json');
 
-        if (messageText === "!create_tournament") {
-            const parts = messageText.split(" ");
-            if (parts.length < 3) {
-                conn.sendMessage(senderId, '⚠️ Usage: !create_tournament <name> <format>', { text: 'text' });
-            } else {
-                const name = parts[1];
-                const format = parts[2];
-                const db = new sqlite3.Database('./tournaments.db');
-                db.run("INSERT INTO tournaments (name, format) VALUES (?, ?)", [name, format], (err) => {
-                    if (err) {
-                        conn.sendMessage(senderId, '❌ Error creating tournament!', { text: 'text' });
-                    } else {
-                        conn.sendMessage(senderId, `✅ Tournament '${name}' created with format '${format}'! 🏆`, { text: 'text' });
-                    }
-                });
-            }
-        } else {
-            conn.sendMessage(senderId, '❌ Invalid command! Use !help for available commands.', { text: 'text' });
-        }
-    });
+// Create the WhatsApp socket
+async function startBot() {
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  const sock = makeWASocket({
+    printQRInTerminal: true,
+    auth: state,
+    version
+  });
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'close') {
+      startBot();
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    const chat = msg.key.remoteJid;
+
+    if (!msg.message) return;
+
+    if (msg.message.conversation) {
+      const text = msg.message.conversation.toLowerCase();
+
+      if (text === '!help') {
+        await sock.sendMessage(chat, {
+          text: `Here are some commands you can use:
+          - !help: Get this help message.
+          - !gif: Get a random football GIF! ⚽
+          - !score: Get the latest football score.`
+        });
+      }
+
+      if (text === '!gif') {
+        const gifRes = await axios.get(giphyURL);
+        const gifUrl = gifRes.data.data.images.original.url;
+
+        await sock.sendMessage(chat, {
+          video: { url: gifUrl },
+          caption: 'Here’s a random football GIF! ⚽'
+        });
+      }
+
+      if (text === '!score') {
+        // This can be replaced with actual football match data
+        await sock.sendMessage(chat, {
+          text: `The current score is: Team A 1 - 0 Team B 🏆`
+        });
+      }
+    }
+  });
+
+  sock.ev.on('auth-state.update', saveState);
 }
 
-async function initDb() {
-    const db = new sqlite3.Database('./tournaments.db');
-    db.serialize(() => {
-        db.run("CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, format TEXT)");
-        db.run("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER, name TEXT, FOREIGN KEY (tournament_id) REFERENCES tournaments(id))");
-        db.run("CREATE TABLE IF NOT EXISTS matches (id INTEGER PRIMARY KEY AUTOINCREMENT, tournament_id INTEGER, team1 TEXT, score1 INTEGER, team2 TEXT, score2 INTEGER, FOREIGN KEY (tournament_id) REFERENCES tournaments(id))");
-    });
-}
-
-connectWhatsApp();
-initDb();
+startBot().catch((err) => console.error(err));
