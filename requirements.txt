@@ -1,2 +1,9 @@
-Flask
-requests
+{
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "main": "app.js",
+  "dependencies": {
+    "@adiwajshing/baileys": "^5.0.0",
+    "sqlite3": "^5.1.0"
+  }
+}
