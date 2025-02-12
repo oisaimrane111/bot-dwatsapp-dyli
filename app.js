@@ -1,15 +1,13 @@
 const { makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@adiwajshing/baileys');
 const sqlite3 = require('sqlite3');
-const fs = require('fs');
 
-// Setup authentication state and WhatsApp connection
 async function connectWhatsApp() {
     const { state, saveState } = await useMultiFileAuthState('./auth');
     const { version } = await fetchLatestBaileysVersion();
     const conn = makeWASocket({
         version,
         printQRInTerminal: true,
-        auth: state
+        auth: state,
     });
 
     conn.ev.on('connection.update', (update) => {
@@ -55,6 +53,5 @@ async function initDb() {
     });
 }
 
-// Start WhatsApp connection and initialize DB
 connectWhatsApp();
 initDb();
